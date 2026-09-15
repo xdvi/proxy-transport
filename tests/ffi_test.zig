@@ -112,3 +112,54 @@ test "ffi: use after free canary returns PROXY_USE_AFTER_FREE" {
     const code = proxy.ffi.proxy_get_last_error(&err_info);
     try testing.expectEqual(@as(i32, -7), code);
 }
+
+test "ffi: lease returns structured endpoint info" {
+    const urls = [_][*:0]const u8{
+        "http://bot:secret@127.0.0.1:8888",
+    };
+    const pool = proxy.ffi.proxy_pool_new(&urls, 1, 3, 60_000);
+    defer proxy.ffi.proxy_pool_free(pool);
+
+    const lease = proxy.ffi.proxy_pool_acquire_lease(pool);
+    defer proxy.ffi.proxy_lease_free(lease);
+
+    var ep: proxy.ffi.ProxyEndpointInfo = undefined;
+    const rc = proxy.ffi.proxy_lease_get_endpoint(lease, &ep);
+    try testing.expectEqual(@as(i32, 0), rc);
+    try testing.expectEqual(@as(i32, 0), ep.scheme);
+    try testing.expectEqualStrings("127.0.0.1", std.mem.sliceTo(&ep.host, 0));
+    try testing.expectEqual(@as(u16, 8888), ep.port);
+    try testing.expect(ep.has_auth);
+    try testing.expectEqualStrings("bot", std.mem.sliceTo(&ep.username, 0));
+    try testing.expectEqualStrings("secret", std.mem.sliceTo(&ep.password, 0));
+    try testing.expectEqualStrings("Basic Ym90OnNlY3JldA==", std.mem.sliceTo(&ep.auth_header, 0));
+}
+
+test "ffi: format connect request and parse response via C-ABI" {
+    const urls = [_][*:0]const u8{
+        "http://bot:secret@127.0.0.1:8888",
+    };
+    const pool = proxy.ffi.proxy_pool_new(&urls, 1, 3, 60_000);
+    defer proxy.ffi.proxy_pool_free(pool);
+
+    const lease = proxy.ffi.proxy_pool_acquire_lease(pool);
+    defer proxy.ffi.proxy_lease_free(lease);
+
+    var ep: proxy.ffi.ProxyEndpointInfo = undefined;
+    _ = proxy.ffi.proxy_lease_get_endpoint(lease, &ep);
+
+    var buf: [512]u8 = undefined;
+    var written: usize = 0;
+    const target: [:0]const u8 = "adres.gov.co";
+    const rc = proxy.ffi.proxy_format_connect_request(&ep, target.ptr, 443, &buf, buf.len, &written);
+    try testing.expectEqual(@as(i32, 0), rc);
+    try testing.expect(std.mem.startsWith(u8, buf[0..written], "CONNECT adres.gov.co:443 HTTP/1.1\r\n"));
+
+    const resp_ok = "HTTP/1.1 200 OK\r\n\r\n";
+    const parse_rc = proxy.ffi.proxy_parse_connect_response(resp_ok.ptr, resp_ok.len);
+    try testing.expectEqual(@as(i32, 0), parse_rc);
+
+    const resp_auth_err = "HTTP/1.1 407 Proxy Auth\r\n\r\n";
+    const auth_err_rc = proxy.ffi.proxy_parse_connect_response(resp_auth_err.ptr, resp_auth_err.len);
+    try testing.expect(auth_err_rc < 0);
+}

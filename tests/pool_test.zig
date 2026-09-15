@@ -79,3 +79,35 @@ test "pool: lease reporting updates slot stats" {
     try testing.expectEqual(@as(u64, 1), stats.successes);
     try testing.expectEqual(@as(u64, 0), stats.failures);
 }
+
+test "pool: lease exposes structured endpoint and basic auth" {
+    const urls = [_][]const u8{
+        "http://botuser:mypass@proxy.crawler.internal:3128",
+    };
+
+    var pool = try proxy.pool.ProxyPool.init(testing.allocator, &urls, 3, 60_000);
+    defer pool.deinit();
+
+    const lease = pool.acquireLease().?;
+    const ep = lease.getEndpoint();
+    try testing.expectEqualStrings("proxy.crawler.internal", ep.host);
+    try testing.expectEqual(@as(u16, 3128), ep.port);
+    try testing.expectEqualStrings("Basic Ym90dXNlcjpteXBhc3M=", ep.auth_header.?);
+}
+
+test "pool: lease converts directly to std.http.Client.Proxy" {
+    const urls = [_][]const u8{
+        "http://botuser:mypass@proxy.crawler.internal:3128",
+    };
+
+    var pool = try proxy.pool.ProxyPool.init(testing.allocator, &urls, 3, 60_000);
+    defer pool.deinit();
+
+    const lease = pool.acquireLease().?;
+    const std_proxy = lease.asHttpProxy();
+
+    try testing.expectEqualStrings("proxy.crawler.internal", std_proxy.host.bytes);
+    try testing.expectEqual(@as(u16, 3128), std_proxy.port);
+    try testing.expect(std_proxy.supports_connect);
+    try testing.expectEqualStrings("Basic Ym90dXNlcjpteXBhc3M=", std_proxy.authorization.?);
+}

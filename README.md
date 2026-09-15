@@ -76,10 +76,13 @@ typedef enum ProxyErrorCode {
 | `proxy_pool_acquire_lease(handle)` | Acquires a sticky lease (or `NULL` if pool is empty / direct egress). |
 | `proxy_lease_free(lease)` | Releases the lease handle. |
 | `proxy_lease_get_url(lease, buf, len, written)` | Copies the raw proxy URL into destination buffer. |
+| `proxy_lease_get_endpoint(lease, out_endpoint)` | Extracts structured `host`, `port`, `scheme`, credentials, and precomputed `Proxy-Authorization: Basic ...` header. |
 | `proxy_lease_get_index(lease)` | Returns slot index in the pool. |
 | `proxy_lease_register_success(lease)` | Marks transaction successful, resetting consecutive errors. |
 | `proxy_lease_register_failure(lease)` | Increments consecutive errors, benching proxy if threshold is reached. |
 | `proxy_pool_get_stats(handle, slot, out_stats)` | Inspects slot metrics (redacted URL, successes, failures, banned status). |
+| `proxy_format_connect_request(ep, host, port, buf, len, written)` | Formats standard `HTTP CONNECT host:port` request with authentication into buffer. |
+| `proxy_parse_connect_response(response, len)` | Validates HTTP tunnel handshake response (checks 200 OK vs 407/403/502). |
 | `proxy_get_last_error(out_info)` | Fetches thread-local error code and descriptive message. |
 
 ---

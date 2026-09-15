@@ -45,6 +45,16 @@ typedef struct ProxyStats {
     bool banned;
 } ProxyStats;
 
+typedef struct ProxyEndpointInfo {
+    int32_t scheme;
+    char host[128];
+    uint16_t port;
+    bool has_auth;
+    char username[64];
+    char password[64];
+    char auth_header[128];
+} ProxyEndpointInfo;
+
 PROXY_API ProxyPoolHandle* proxy_pool_new(
     const char* const* urls,
     size_t count,
@@ -77,6 +87,11 @@ PROXY_API int32_t proxy_lease_get_url(
     size_t* out_written
 );
 
+PROXY_API int32_t proxy_lease_get_endpoint(
+    const ProxyLeaseHandle* lease,
+    ProxyEndpointInfo* out_endpoint
+);
+
 PROXY_API size_t proxy_lease_get_index(const ProxyLeaseHandle* lease);
 
 PROXY_API void proxy_lease_register_success(ProxyLeaseHandle* lease);
@@ -93,6 +108,20 @@ PROXY_API int32_t proxy_pool_get_stats(
     const ProxyPoolHandle* handle,
     size_t slot_index,
     ProxyStats* out_stats
+);
+
+PROXY_API int32_t proxy_format_connect_request(
+    const ProxyEndpointInfo* endpoint,
+    const char* target_host,
+    uint16_t target_port,
+    char* out_buf,
+    size_t out_len,
+    size_t* out_written
+);
+
+PROXY_API int32_t proxy_parse_connect_response(
+    const char* response,
+    size_t response_len
 );
 
 PROXY_API int32_t proxy_get_last_error(ProxyErrorInfo* out_info);

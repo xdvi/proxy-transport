@@ -3,12 +3,14 @@ const Allocator = std.mem.Allocator;
 const AtomicUsize = std.atomic.Value(usize);
 const ProxyHealth = @import("health.zig").ProxyHealth;
 const ProxyLease = @import("lease.zig").ProxyLease;
+const ProxyEndpoint = @import("endpoint.zig").ProxyEndpoint;
 const parser = @import("parser.zig");
 const time = @import("../utils/time.zig");
 
 pub const ProxyEntry = struct {
     raw_url: []const u8,
     redacted_url: []const u8,
+    endpoint: ProxyEndpoint,
     health: ProxyHealth,
 };
 
@@ -37,9 +39,10 @@ pub const ProxyPool = struct {
 
         var initialized: usize = 0;
         errdefer {
-            for (entries[0..initialized]) |entry| {
+            for (entries[0..initialized]) |*entry| {
                 allocator.free(entry.raw_url);
                 allocator.free(entry.redacted_url);
+                entry.endpoint.deinit(allocator);
             }
         }
 
@@ -48,10 +51,13 @@ pub const ProxyPool = struct {
             errdefer allocator.free(normalized);
             const redacted = try parser.redactUrl(allocator, normalized);
             errdefer allocator.free(redacted);
+            var ep = try ProxyEndpoint.parse(allocator, normalized);
+            errdefer ep.deinit(allocator);
 
             entries[i] = .{
                 .raw_url = normalized,
                 .redacted_url = redacted,
+                .endpoint = ep,
                 .health = ProxyHealth.init(failure_threshold, cooldown_ms),
             };
             initialized += 1;
@@ -84,9 +90,10 @@ pub const ProxyPool = struct {
     }
 
     pub fn deinit(self: *ProxyPool) void {
-        for (self.entries) |entry| {
+        for (self.entries) |*entry| {
             self.allocator.free(entry.raw_url);
             self.allocator.free(entry.redacted_url);
+            entry.endpoint.deinit(self.allocator);
         }
         self.allocator.free(self.entries);
         self.* = undefined;
@@ -120,6 +127,7 @@ pub const ProxyPool = struct {
                     slot,
                     self.entries[slot].raw_url,
                     self.entries[slot].redacted_url,
+                    &self.entries[slot].endpoint,
                 );
             }
         }
@@ -130,6 +138,7 @@ pub const ProxyPool = struct {
             fallback_slot,
             self.entries[fallback_slot].raw_url,
             self.entries[fallback_slot].redacted_url,
+            &self.entries[fallback_slot].endpoint,
         );
     }
 

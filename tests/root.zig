@@ -5,4 +5,6 @@ test {
     _ = @import("health_test.zig");
     _ = @import("pool_test.zig");
     _ = @import("ffi_test.zig");
+    _ = @import("endpoint_test.zig");
+    _ = @import("tunnel_test.zig");
 }

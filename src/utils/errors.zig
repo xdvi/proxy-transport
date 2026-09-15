@@ -26,3 +26,13 @@ pub const ProxyStats = extern struct {
     failures: u64,
     banned: bool,
 };
+
+pub const ProxyEndpointInfo = extern struct {
+    scheme: i32,
+    host: [128]u8,
+    port: u16,
+    has_auth: bool,
+    username: [64]u8,
+    password: [64]u8,
+    auth_header: [128]u8,
+};
