@@ -223,6 +223,78 @@ pub export fn proxy_pool_free(handle: ?*ProxyPoolHandle) callconv(.c) void {
     std.heap.c_allocator.destroy(h);
 }
 
+pub export fn proxy_pool_reload_urls(
+    handle: ?*ProxyPoolHandle,
+    urls: ?[*]const ?[*:0]const u8,
+    count: usize,
+) callconv(.c) i32 {
+    const h = validatePoolHandle(handle) orelse return last_error_code;
+    const allocator = std.heap.c_allocator;
+
+    var url_slices = allocator.alloc([]const u8, count) catch {
+        setLastError(.OutOfMemory, "Failed to allocate url slice buffer");
+        return ProxyErrorCode.OutOfMemory.toI32();
+    };
+    defer allocator.free(url_slices);
+
+    if (urls) |u_ptr| {
+        for (0..count) |i| {
+            if (u_ptr[i]) |str| {
+                url_slices[i] = std.mem.span(str);
+            } else {
+                setLastError(.InvalidArgument, "Null url in array");
+                return ProxyErrorCode.InvalidArgument.toI32();
+            }
+        }
+    } else if (count > 0) {
+        setLastError(.InvalidArgument, "Null url pointer with count > 0");
+        return ProxyErrorCode.InvalidArgument.toI32();
+    }
+
+    h.pool.reloadUrls(url_slices) catch |err| {
+        switch (err) {
+            error.OutOfMemory => {
+                setLastError(.OutOfMemory, "Failed to reload pool: OOM");
+                return ProxyErrorCode.OutOfMemory.toI32();
+            },
+            else => {
+                setLastError(.InvalidArgument, "Failed to reload pool: invalid URL configuration");
+                return ProxyErrorCode.InvalidArgument.toI32();
+            },
+        }
+    };
+
+    return 0;
+}
+
+pub export fn proxy_pool_reload_from_text(
+    handle: ?*ProxyPoolHandle,
+    proxy_list_text: ?[*:0]const u8,
+) callconv(.c) i32 {
+    const h = validatePoolHandle(handle) orelse return last_error_code;
+    if (proxy_list_text == null) {
+        setLastError(.InvalidArgument, "Null proxy list text");
+        return ProxyErrorCode.InvalidArgument.toI32();
+    }
+
+    const text_slice = std.mem.span(proxy_list_text.?);
+    h.pool.reloadFromText(text_slice) catch |err| {
+        switch (err) {
+            error.OutOfMemory => {
+                setLastError(.OutOfMemory, "Failed to reload pool from text: OOM");
+                return ProxyErrorCode.OutOfMemory.toI32();
+            },
+            else => {
+                setLastError(.InvalidArgument, "Failed to reload pool: invalid text content");
+                return ProxyErrorCode.InvalidArgument.toI32();
+            },
+        }
+    };
+
+    return 0;
+}
+
+
 pub export fn proxy_pool_acquire_lease(handle: ?*const ProxyPoolHandle) callconv(.c) ?*ProxyLeaseHandle {
     const h = validatePoolHandle(handle) orelse return null;
     const maybe_lease = h.pool.acquireLease();

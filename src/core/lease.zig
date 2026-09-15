@@ -1,28 +1,25 @@
 const std = @import("std");
-const ProxyPool = @import("pool.zig").ProxyPool;
 const ProxyEndpoint = @import("endpoint.zig").ProxyEndpoint;
+const time = @import("../utils/time.zig");
+const pool_mod = @import("pool.zig");
+pub const ProxyPool = pool_mod.ProxyPool;
+pub const ProxyEntry = pool_mod.ProxyEntry;
 
 pub const ProxyLease = struct {
     pool: *ProxyPool,
+    entry: *ProxyEntry,
     slot_index: usize,
-    raw_url: []const u8,
-    redacted_url: []const u8,
-    endpoint: *const ProxyEndpoint,
     released: bool,
 
     pub fn init(
         pool: *ProxyPool,
+        entry: *ProxyEntry,
         slot_index: usize,
-        raw_url: []const u8,
-        redacted_url: []const u8,
-        endpoint_ptr: *const ProxyEndpoint,
     ) ProxyLease {
         return .{
             .pool = pool,
+            .entry = entry,
             .slot_index = slot_index,
-            .raw_url = raw_url,
-            .redacted_url = redacted_url,
-            .endpoint = endpoint_ptr,
             .released = false,
         };
     }
@@ -30,7 +27,8 @@ pub const ProxyLease = struct {
     pub fn release(self: *ProxyLease) void {
         if (!self.released) {
             self.released = true;
-            self.pool.releaseLease(self.slot_index);
+            self.entry.releaseLease();
+            self.pool.cleanupDraining();
         }
     }
 
@@ -38,13 +36,12 @@ pub const ProxyLease = struct {
         self.release();
     }
 
-
     pub fn getUrl(self: *const ProxyLease) []const u8 {
-        return self.raw_url;
+        return self.entry.raw_url;
     }
 
     pub fn getRedactedUrl(self: *const ProxyLease) []const u8 {
-        return self.redacted_url;
+        return self.entry.redacted_url;
     }
 
     pub fn getSlotIndex(self: *const ProxyLease) usize {
@@ -52,27 +49,28 @@ pub const ProxyLease = struct {
     }
 
     pub fn getEndpoint(self: *const ProxyLease) *const ProxyEndpoint {
-        return self.endpoint;
+        return &self.entry.endpoint;
     }
 
     pub fn asHttpProxy(self: *const ProxyLease) std.http.Client.Proxy {
         return .{
-            .protocol = switch (self.endpoint.scheme) {
+            .protocol = switch (self.entry.endpoint.scheme) {
                 .http, .socks5 => .plain,
                 .https => .tls,
             },
-            .host = .{ .bytes = self.endpoint.host },
-            .port = self.endpoint.port,
-            .authorization = self.endpoint.auth_header,
+            .host = .{ .bytes = self.entry.endpoint.host },
+            .port = self.entry.endpoint.port,
+            .authorization = self.entry.endpoint.auth_header,
             .supports_connect = true,
         };
     }
 
     pub fn registerSuccess(self: *ProxyLease) void {
-        self.pool.registerSuccess(self.slot_index);
+        self.entry.health.registerSuccess();
     }
 
     pub fn registerFailure(self: *ProxyLease) void {
-        self.pool.registerFailure(self.slot_index);
+        self.entry.health.registerFailure(time.nowMs());
     }
 };
+

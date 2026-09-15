@@ -76,6 +76,18 @@ PROXY_API ProxyPoolHandle* proxy_pool_from_text(
 
 PROXY_API void proxy_pool_free(ProxyPoolHandle* handle);
 
+PROXY_API int32_t proxy_pool_reload_urls(
+    ProxyPoolHandle* handle,
+    const char* const* urls,
+    size_t count
+);
+
+PROXY_API int32_t proxy_pool_reload_from_text(
+    ProxyPoolHandle* handle,
+    const char* proxy_list_text
+);
+
+
 PROXY_API ProxyLeaseHandle* proxy_pool_acquire_lease(const ProxyPoolHandle* handle);
 
 PROXY_API void proxy_lease_free(ProxyLeaseHandle* lease);

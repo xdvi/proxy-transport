@@ -16,6 +16,13 @@ pub const ProxyEntry = struct {
     active_leases: AtomicU32,
     max_concurrency: u32,
 
+    pub fn deinit(self: *ProxyEntry, allocator: Allocator) void {
+        allocator.free(self.raw_url);
+        allocator.free(self.redacted_url);
+        self.endpoint.deinit(allocator);
+        allocator.destroy(self);
+    }
+
     pub fn tryAcquireLease(self: *ProxyEntry) bool {
         var cur = self.active_leases.load(.monotonic);
         while (true) {
@@ -45,7 +52,8 @@ pub const PoolStats = struct {
 
 pub const ProxyPool = struct {
     allocator: Allocator,
-    entries: []ProxyEntry,
+    entries: []*ProxyEntry,
+    draining: std.ArrayList(*ProxyEntry),
     next_index: AtomicUsize,
     failure_threshold: u32,
     cooldown_ms: u64,
@@ -67,15 +75,13 @@ pub const ProxyPool = struct {
         cooldown_ms: u64,
         max_concurrency: u32,
     ) !ProxyPool {
-        const entries = try allocator.alloc(ProxyEntry, urls.len);
+        const entries = try allocator.alloc(*ProxyEntry, urls.len);
         errdefer allocator.free(entries);
 
         var initialized: usize = 0;
         errdefer {
-            for (entries[0..initialized]) |*entry| {
-                allocator.free(entry.raw_url);
-                allocator.free(entry.redacted_url);
-                entry.endpoint.deinit(allocator);
+            for (entries[0..initialized]) |entry| {
+                entry.deinit(allocator);
             }
         }
 
@@ -87,7 +93,8 @@ pub const ProxyPool = struct {
             var ep = try ProxyEndpoint.parse(allocator, normalized);
             errdefer ep.deinit(allocator);
 
-            entries[i] = .{
+            const entry = try allocator.create(ProxyEntry);
+            entry.* = .{
                 .raw_url = normalized,
                 .redacted_url = redacted,
                 .endpoint = ep,
@@ -95,19 +102,20 @@ pub const ProxyPool = struct {
                 .active_leases = AtomicU32.init(0),
                 .max_concurrency = max_concurrency,
             };
+            entries[i] = entry;
             initialized += 1;
         }
 
         return .{
             .allocator = allocator,
             .entries = entries,
+            .draining = .empty,
             .next_index = AtomicUsize.init(0),
             .failure_threshold = failure_threshold,
             .cooldown_ms = cooldown_ms,
             .max_concurrency_per_proxy = max_concurrency,
         };
     }
-
 
     pub fn fromText(
         allocator: Allocator,
@@ -127,13 +135,160 @@ pub const ProxyPool = struct {
     }
 
     pub fn deinit(self: *ProxyPool) void {
-        for (self.entries) |*entry| {
-            self.allocator.free(entry.raw_url);
-            self.allocator.free(entry.redacted_url);
-            entry.endpoint.deinit(self.allocator);
+        for (self.entries) |entry| {
+            entry.deinit(self.allocator);
         }
         self.allocator.free(self.entries);
+
+        for (self.draining.items) |entry| {
+            entry.deinit(self.allocator);
+        }
+        self.draining.deinit(self.allocator);
         self.* = undefined;
+    }
+
+    pub fn cleanupDraining(self: *ProxyPool) void {
+        var idx: usize = 0;
+        while (idx < self.draining.items.len) {
+            const entry = self.draining.items[idx];
+            if (entry.active_leases.load(.monotonic) == 0) {
+                _ = self.draining.orderedRemove(idx);
+                entry.deinit(self.allocator);
+            } else {
+                idx += 1;
+            }
+        }
+    }
+
+    pub fn reloadUrls(self: *ProxyPool, new_urls: []const []const u8) !void {
+        const ParsedItem = struct {
+            raw: []const u8,
+            redacted: []const u8,
+            endpoint: ProxyEndpoint,
+        };
+
+        const parsed_items = try self.allocator.alloc(ParsedItem, new_urls.len);
+        defer self.allocator.free(parsed_items);
+
+        var parsed_count: usize = 0;
+        errdefer {
+            for (parsed_items[0..parsed_count]) |*item| {
+                self.allocator.free(item.raw);
+                self.allocator.free(item.redacted);
+                item.endpoint.deinit(self.allocator);
+            }
+        }
+
+        for (new_urls, 0..) |url, i| {
+            const normalized = try parser.normalizeUrl(self.allocator, url);
+            errdefer self.allocator.free(normalized);
+            const redacted = try parser.redactUrl(self.allocator, normalized);
+            errdefer self.allocator.free(redacted);
+            var ep = try ProxyEndpoint.parse(self.allocator, normalized);
+            errdefer ep.deinit(self.allocator);
+
+            parsed_items[i] = .{
+                .raw = normalized,
+                .redacted = redacted,
+                .endpoint = ep,
+            };
+            parsed_count += 1;
+        }
+
+        const new_entries = try self.allocator.alloc(*ProxyEntry, new_urls.len);
+        errdefer self.allocator.free(new_entries);
+
+        var initialized: usize = 0;
+        errdefer {
+            for (new_entries[0..initialized]) |entry| {
+                var was_existing = false;
+                for (self.entries) |existing| {
+                    if (existing == entry) {
+                        was_existing = true;
+                        break;
+                    }
+                }
+                if (!was_existing) {
+                    entry.deinit(self.allocator);
+                }
+            }
+        }
+
+        for (parsed_items, 0..) |*item, i| {
+            var existing_entry: ?*ProxyEntry = null;
+
+            for (self.entries) |existing| {
+                if (std.mem.eql(u8, existing.raw_url, item.raw)) {
+                    existing_entry = existing;
+                    break;
+                }
+            }
+
+            if (existing_entry == null) {
+                var d_idx: usize = 0;
+                while (d_idx < self.draining.items.len) {
+                    if (std.mem.eql(u8, self.draining.items[d_idx].raw_url, item.raw)) {
+                        existing_entry = self.draining.orderedRemove(d_idx);
+                        break;
+                    } else {
+                        d_idx += 1;
+                    }
+                }
+            }
+
+            if (existing_entry) |reused| {
+                self.allocator.free(item.raw);
+                self.allocator.free(item.redacted);
+                item.endpoint.deinit(self.allocator);
+                new_entries[i] = reused;
+            } else {
+                const entry = try self.allocator.create(ProxyEntry);
+                entry.* = .{
+                    .raw_url = item.raw,
+                    .redacted_url = item.redacted,
+                    .endpoint = item.endpoint,
+                    .health = ProxyHealth.initWithMax(self.failure_threshold, self.cooldown_ms, self.cooldown_ms *| 16),
+                    .active_leases = AtomicU32.init(0),
+                    .max_concurrency = self.max_concurrency_per_proxy,
+                };
+                new_entries[i] = entry;
+            }
+            initialized += 1;
+        }
+
+        for (self.entries) |old_entry| {
+            var retained = false;
+            for (new_entries) |new_entry| {
+                if (old_entry == new_entry) {
+                    retained = true;
+                    break;
+                }
+            }
+
+            if (!retained) {
+                if (old_entry.active_leases.load(.monotonic) > 0) {
+                    try self.draining.append(self.allocator, old_entry);
+                } else {
+                    old_entry.deinit(self.allocator);
+                }
+            }
+        }
+
+        self.allocator.free(self.entries);
+        self.entries = new_entries;
+        self.cleanupDraining();
+    }
+
+    pub fn reloadFromText(self: *ProxyPool, text: []const u8) !void {
+        const parsed_lines = try parser.parseLines(self.allocator, text);
+        defer {
+            for (parsed_lines) |line| {
+                self.allocator.free(line);
+            }
+            self.allocator.free(parsed_lines);
+        }
+
+        return self.reloadUrls(parsed_lines);
     }
 
     pub fn len(self: *const ProxyPool) usize {
@@ -172,13 +327,7 @@ pub const ProxyPool = struct {
 
         if (best_slot) |slot| {
             if (self.entries[slot].tryAcquireLease()) {
-                return ProxyLease.init(
-                    self,
-                    slot,
-                    self.entries[slot].raw_url,
-                    self.entries[slot].redacted_url,
-                    &self.entries[slot].endpoint,
-                );
+                return ProxyLease.init(self, self.entries[slot], slot);
             }
         }
 
@@ -187,13 +336,7 @@ pub const ProxyPool = struct {
             const slot = (start + i) % total;
             if (!self.entries[slot].health.isBanned(now_ms)) {
                 if (self.entries[slot].tryAcquireLease()) {
-                    return ProxyLease.init(
-                        self,
-                        slot,
-                        self.entries[slot].raw_url,
-                        self.entries[slot].redacted_url,
-                        &self.entries[slot].endpoint,
-                    );
+                    return ProxyLease.init(self, self.entries[slot], slot);
                 }
             }
         }
@@ -211,13 +354,7 @@ pub const ProxyPool = struct {
         }
 
         if (self.entries[fallback_slot].tryAcquireLease()) {
-            return ProxyLease.init(
-                self,
-                fallback_slot,
-                self.entries[fallback_slot].raw_url,
-                self.entries[fallback_slot].redacted_url,
-                &self.entries[fallback_slot].endpoint,
-            );
+            return ProxyLease.init(self, self.entries[fallback_slot], fallback_slot);
         }
 
         return null;
@@ -226,6 +363,7 @@ pub const ProxyPool = struct {
     pub fn releaseLease(self: *ProxyPool, slot_index: usize) void {
         if (slot_index < self.entries.len) {
             self.entries[slot_index].releaseLease();
+            self.cleanupDraining();
         }
     }
 
@@ -235,7 +373,6 @@ pub const ProxyPool = struct {
         }
         return 0;
     }
-
 
     pub fn registerSuccess(self: *ProxyPool, slot_index: usize) void {
         if (slot_index < self.entries.len) {
@@ -251,7 +388,7 @@ pub const ProxyPool = struct {
 
     pub fn getStats(self: *const ProxyPool, slot_index: usize) ?PoolStats {
         if (slot_index >= self.entries.len) return null;
-        const entry = &self.entries[slot_index];
+        const entry = self.entries[slot_index];
         const h_stats = entry.health.getStats(time.nowMs());
         return .{
             .url = entry.redacted_url,
@@ -261,3 +398,4 @@ pub const ProxyPool = struct {
         };
     }
 };
+

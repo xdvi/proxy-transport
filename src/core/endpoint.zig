@@ -31,9 +31,12 @@ pub const ProxyEndpoint = struct {
             } else if (std.ascii.eqlIgnoreCase(scheme_str, "http")) {
                 scheme = .http;
                 default_port = 80;
+            } else {
+                return error.InvalidScheme;
             }
             rest = rest[idx + 3 ..];
         }
+
 
         var username: ?[]const u8 = null;
         var password: ?[]const u8 = null;

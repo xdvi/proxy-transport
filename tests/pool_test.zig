@@ -142,3 +142,64 @@ test "pool: in-flight leases tracking, release and max concurrency" {
     try testing.expectEqual(@as(u32, 0), pool.getActiveLeases(slot2));
 }
 
+test "pool: hot-reload updates topology, preserves health state, and drains active leases" {
+    const initial_urls = [_][]const u8{
+        "http://proxy1.local:8080",
+        "http://proxy2.local:8080",
+    };
+
+    var pool = try proxy.pool.ProxyPool.init(testing.allocator, &initial_urls, 2, 60_000);
+    defer pool.deinit();
+
+    var old_lease = pool.acquireLease().?;
+    try testing.expectEqualStrings("http://proxy1.local:8080", old_lease.getUrl());
+    old_lease.registerFailure();
+
+    const stats_before = pool.getStats(0).?;
+    try testing.expectEqual(@as(u64, 1), stats_before.failures);
+
+    const new_urls = [_][]const u8{
+        "http://proxy1.local:8080",
+        "http://proxy3.local:8080",
+    };
+    try pool.reloadUrls(&new_urls);
+
+    try testing.expectEqual(@as(usize, 2), pool.len());
+
+    const stats_after = pool.getStats(0).?;
+    try testing.expectEqualStrings("http://proxy1.local:8080", stats_after.url);
+    try testing.expectEqual(@as(u64, 1), stats_after.failures);
+
+    old_lease.registerFailure();
+    old_lease.release();
+
+    const stats_banned = pool.getStats(0).?;
+    try testing.expectEqual(@as(u64, 2), stats_banned.failures);
+    try testing.expect(stats_banned.banned);
+
+    var new_lease = pool.acquireLease().?;
+    try testing.expectEqualStrings("http://proxy3.local:8080", new_lease.getUrl());
+    new_lease.release();
+}
+
+test "pool: hot-reload rolls back on invalid url without mutating pool" {
+    const initial_urls = [_][]const u8{
+        "http://proxy1.local:8080",
+    };
+
+    var pool = try proxy.pool.ProxyPool.init(testing.allocator, &initial_urls, 2, 60_000);
+    defer pool.deinit();
+
+    const invalid_urls = [_][]const u8{
+        "invalid://::not-a-url::",
+    };
+    const result = pool.reloadUrls(&invalid_urls);
+    try testing.expectError(error.InvalidScheme, result);
+
+    try testing.expectEqual(@as(usize, 1), pool.len());
+    var lease = pool.acquireLease().?;
+    try testing.expectEqualStrings("http://proxy1.local:8080", lease.getUrl());
+    lease.release();
+}
+
+

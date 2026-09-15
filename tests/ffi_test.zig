@@ -183,3 +183,37 @@ test "ffi: format connect request and parse response via C-ABI" {
     const auth_err_rc = proxy.ffi.proxy_parse_connect_response(resp_auth_err.ptr, resp_auth_err.len);
     try testing.expect(auth_err_rc < 0);
 }
+
+test "ffi: pool hot-reload via C-ABI preserves stats on continuing proxies" {
+    const urls1 = [_][*:0]const u8{
+        "http://proxy1.local:8080",
+        "http://proxy2.local:8080",
+    };
+
+    const pool = proxy.ffi.proxy_pool_new(&urls1, urls1.len, 3, 60_000);
+    try testing.expect(pool != null);
+    defer proxy.ffi.proxy_pool_free(pool);
+
+    const lease = proxy.ffi.proxy_pool_acquire_lease(pool);
+    try testing.expect(lease != null);
+    proxy.ffi.proxy_lease_register_success(lease);
+    proxy.ffi.proxy_lease_free(lease);
+
+    var stats_before: proxy.ffi.ProxyStats = undefined;
+    _ = proxy.ffi.proxy_pool_get_stats(pool, 0, &stats_before);
+    try testing.expectEqual(@as(u64, 1), stats_before.successes);
+
+    const urls2 = [_][*:0]const u8{
+        "http://proxy1.local:8080",
+        "http://proxy3.local:8080",
+    };
+    const rc = proxy.ffi.proxy_pool_reload_urls(pool, &urls2, urls2.len);
+    try testing.expectEqual(@as(i32, 0), rc);
+
+    try testing.expectEqual(@as(usize, 2), proxy.ffi.proxy_pool_len(pool));
+
+    var stats_after: proxy.ffi.ProxyStats = undefined;
+    _ = proxy.ffi.proxy_pool_get_stats(pool, 0, &stats_after);
+    try testing.expectEqual(@as(u64, 1), stats_after.successes);
+}
+
