@@ -8,6 +8,7 @@ pub const ProxyLease = struct {
     raw_url: []const u8,
     redacted_url: []const u8,
     endpoint: *const ProxyEndpoint,
+    released: bool,
 
     pub fn init(
         pool: *ProxyPool,
@@ -22,8 +23,21 @@ pub const ProxyLease = struct {
             .raw_url = raw_url,
             .redacted_url = redacted_url,
             .endpoint = endpoint_ptr,
+            .released = false,
         };
     }
+
+    pub fn release(self: *ProxyLease) void {
+        if (!self.released) {
+            self.released = true;
+            self.pool.releaseLease(self.slot_index);
+        }
+    }
+
+    pub fn deinit(self: *ProxyLease) void {
+        self.release();
+    }
+
 
     pub fn getUrl(self: *const ProxyLease) []const u8 {
         return self.raw_url;

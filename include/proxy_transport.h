@@ -110,6 +110,12 @@ PROXY_API int32_t proxy_pool_get_stats(
     ProxyStats* out_stats
 );
 
+PROXY_API uint32_t proxy_pool_get_active_leases(
+    const ProxyPoolHandle* handle,
+    size_t slot_index
+);
+
+
 PROXY_API int32_t proxy_format_connect_request(
     const ProxyEndpointInfo* endpoint,
     const char* target_host,

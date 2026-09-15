@@ -35,6 +35,26 @@ test "ffi: lifecycle new, lease acquire, get_url, feedback, and free" {
     try testing.expectEqual(@as(u64, 0), stats.failures);
 }
 
+test "ffi: active lease tracking and decrement on proxy_lease_free" {
+    const urls = [_][*:0]const u8{
+        "http://proxy1.local:8080",
+    };
+
+    const pool = proxy.ffi.proxy_pool_new(&urls, urls.len, 3, 60_000);
+    try testing.expect(pool != null);
+    defer proxy.ffi.proxy_pool_free(pool);
+
+    try testing.expectEqual(@as(u32, 0), proxy.ffi.proxy_pool_get_active_leases(pool, 0));
+
+    const lease = proxy.ffi.proxy_pool_acquire_lease(pool);
+    try testing.expect(lease != null);
+    try testing.expectEqual(@as(u32, 1), proxy.ffi.proxy_pool_get_active_leases(pool, 0));
+
+    proxy.ffi.proxy_lease_free(lease);
+    try testing.expectEqual(@as(u32, 0), proxy.ffi.proxy_pool_get_active_leases(pool, 0));
+}
+
+
 test "ffi: from_text parses string pool" {
     const text: [:0]const u8 =
         \\# comment

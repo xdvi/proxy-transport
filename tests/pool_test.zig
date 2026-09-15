@@ -111,3 +111,34 @@ test "pool: lease converts directly to std.http.Client.Proxy" {
     try testing.expect(std_proxy.supports_connect);
     try testing.expectEqualStrings("Basic Ym90dXNlcjpteXBhc3M=", std_proxy.authorization.?);
 }
+
+test "pool: in-flight leases tracking, release and max concurrency" {
+    const urls = [_][]const u8{
+        "http://proxy1.local:8080",
+        "http://proxy2.local:8080",
+    };
+
+    var pool = try proxy.pool.ProxyPool.initWithMaxConcurrency(testing.allocator, &urls, 3, 60_000, 1);
+    defer pool.deinit();
+
+    try testing.expectEqual(@as(u32, 0), pool.getActiveLeases(0));
+    try testing.expectEqual(@as(u32, 0), pool.getActiveLeases(1));
+
+    var l1 = pool.acquireLease().?;
+    const slot1 = l1.getSlotIndex();
+    try testing.expectEqual(@as(u32, 1), pool.getActiveLeases(slot1));
+
+    // Next lease should pick the other proxy because slot1 reached max_concurrency = 1
+    var l2 = pool.acquireLease().?;
+    const slot2 = l2.getSlotIndex();
+    try testing.expect(slot1 != slot2);
+    try testing.expectEqual(@as(u32, 1), pool.getActiveLeases(slot2));
+
+    // Releasing l1 drops its active count back to 0
+    l1.release();
+    try testing.expectEqual(@as(u32, 0), pool.getActiveLeases(slot1));
+
+    l2.release();
+    try testing.expectEqual(@as(u32, 0), pool.getActiveLeases(slot2));
+}
+

@@ -244,9 +244,11 @@ pub export fn proxy_pool_acquire_lease(handle: ?*const ProxyPoolHandle) callconv
 
 pub export fn proxy_lease_free(lease: ?*ProxyLeaseHandle) callconv(.c) void {
     const h = validateLeaseHandle(lease) orelse return;
+    h.lease.release();
     h.canary = CANARY_FREED;
     std.heap.c_allocator.destroy(h);
 }
+
 
 pub export fn proxy_lease_get_url(
     lease: ?*const ProxyLeaseHandle,
@@ -366,6 +368,12 @@ pub export fn proxy_pool_get_stats(
     out_stats.?.banned = stats.banned;
     return 0;
 }
+
+pub export fn proxy_pool_get_active_leases(handle: ?*const ProxyPoolHandle, slot_index: usize) callconv(.c) u32 {
+    const h = validatePoolHandle(handle) orelse return 0;
+    return h.pool.getActiveLeases(slot_index);
+}
+
 
 pub export fn proxy_format_connect_request(
     endpoint: ?*const ProxyEndpointInfo,
