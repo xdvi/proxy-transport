@@ -24,27 +24,27 @@ jobs:
         include:
           - target: x86_64-linux-gnu
             target_name: linux-x86_64
-            archive_ext: tar.gz
+            archive_ext: tar.xz
             os_tag: linux
           - target: aarch64-linux-gnu
             target_name: linux-aarch64
-            archive_ext: tar.gz
+            archive_ext: tar.xz
             os_tag: linux
           - target: x86_64-linux-musl
             target_name: linux-x86_64-musl
-            archive_ext: tar.gz
+            archive_ext: tar.xz
             os_tag: linux
           - target: aarch64-linux-musl
             target_name: linux-aarch64-musl
-            archive_ext: tar.gz
+            archive_ext: tar.xz
             os_tag: linux
           - target: aarch64-macos
             target_name: macos-aarch64
-            archive_ext: tar.gz
+            archive_ext: tar.xz
             os_tag: macos
           - target: x86_64-macos
             target_name: macos-x86_64
-            archive_ext: tar.gz
+            archive_ext: tar.xz
             os_tag: macos
           - target: x86_64-windows
             target_name: windows-x86_64
@@ -64,16 +64,26 @@ jobs:
         with:
           version: '0.16.0'
 
+      - name: Cache Zig global & local caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/zig
+            .zig-cache
+          key: ${{ runner.os }}-zig-${{ matrix.target }}-${{ hashFiles('build.zig', 'build.zig.zon') }}
+          restore-keys: |
+            ${{ runner.os }}-zig-${{ matrix.target }}-
+
       - name: Build Release Packages
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
           ARCHIVE="proxy-transport-${TAG}-${{ matrix.target_name }}.${{ matrix.archive_ext }}"
 
-          # Build shared library
-          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast -Dshared=true --prefix build-shared
+          # Build shared library (ReleaseSmall for minimal binary footprint)
+          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSmall -Dshared=true --prefix build-shared
 
-          # Build static library
-          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseFast -Dshared=false --prefix build-static
+          # Build static library (ReleaseSmall)
+          zig build -Dtarget=${{ matrix.target }} -Doptimize=ReleaseSmall -Dshared=false --prefix build-static
 
           # Assemble package directory
           mkdir -p dist/pkg/lib dist/pkg/include
@@ -93,11 +103,11 @@ jobs:
             cp build-static/lib/proxy_transport.lib dist/pkg/lib/proxy_transport_static.lib
           fi
 
-          # Create archive
-          if [ "${{ matrix.archive_ext }}" = "tar.gz" ]; then
-            tar -czf "dist/${ARCHIVE}" -C dist/pkg .
+          # Create high-compression archive
+          if [ "${{ matrix.archive_ext }}" = "tar.xz" ]; then
+            tar -cJf "dist/${ARCHIVE}" -C dist/pkg .
           else
-            (cd dist/pkg && zip -r "../${ARCHIVE}" .)
+            (cd dist/pkg && zip -9 -r "../${ARCHIVE}" .)
           fi
 
       - name: Upload Release Asset

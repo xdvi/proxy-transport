@@ -94,7 +94,10 @@ pub fn build(b: *std.Build) void {
         .root_module = example_module,
     });
 
-    b.installArtifact(example_exe);
+    const build_examples = b.option(bool, "examples", "Install example executables") orelse false;
+    if (build_examples) {
+        b.installArtifact(example_exe);
+    }
 
     const run_example = b.addRunArtifact(example_exe);
     const example_step = b.step("example", "Run consumer usage example in examples/zig/main.zig");
