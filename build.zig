@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
 
     const linkage = if (shared) std.builtin.LinkMode.dynamic else std.builtin.LinkMode.static;
 
-    const proxy_module = b.createModule(.{
+    const proxy_module = b.addModule("proxy_transport", .{
         .root_source_file = b.path("src/lib.zig"),
         .target = target,
         .optimize = optimize,
