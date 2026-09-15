@@ -22,15 +22,15 @@ pub const HealthConfig = struct {
 };
 
 pub const ProxyHealth = struct {
-    failure_threshold: u32,
     base_cooldown_ms: u64,
     max_cooldown_ms: u64,
-    jitter: JitterMode,
-    consecutive_failures: AtomicU32,
-    success_count: AtomicU64,
-    failure_count: AtomicU64,
     banned_until_ms: AtomicU64,
     rng_state: AtomicU64,
+    success_count: AtomicU64,
+    failure_count: AtomicU64,
+    failure_threshold: u32,
+    consecutive_failures: AtomicU32,
+    jitter: JitterMode,
 
     pub fn init(failure_threshold: u32, cooldown_ms: u64) ProxyHealth {
         return initWithConfig(.{

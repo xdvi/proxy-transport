@@ -75,3 +75,9 @@ test "health: exponential backoff with max cooldown cap and jitter" {
     try testing.expect(banned_4 <= 10_000 + 4_000);
 }
 
+test "health: memory layout is cache-line friendly (<= 64 bytes)" {
+    try testing.expect(@sizeOf(proxy.health.ProxyHealth) <= 64);
+    try testing.expectEqual(@as(usize, 8), @alignOf(proxy.health.ProxyHealth));
+}
+
+
