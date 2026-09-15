@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: Build (${{ matrix.target_name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_name: linux-x86_64
+            archive_ext: tar.gz
+          - os: macos-latest
+            target_name: macos-aarch64
+            archive_ext: tar.gz
+          - os: windows-latest
+            target_name: windows-x86_64
+            archive_ext: zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Zig
+        uses: ./.github/actions/setup-zig
+        with:
+          version: '0.16.0'
+
+      - name: Build Release (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          zig build -Doptimize=ReleaseFast
+          TAG="${{ github.ref_name }}"
+          ARCHIVE="proxy-transport-${TAG}-${{ matrix.target_name }}.${{ matrix.archive_ext }}"
+          mkdir -p dist/pkg/lib dist/pkg/include
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            cp zig-out/lib/libproxy_transport.so dist/pkg/lib/
+          else
+            cp zig-out/lib/libproxy_transport.dylib dist/pkg/lib/
+          fi
+          cp include/proxy_transport.h dist/pkg/include/
+          cp README.md LICENSE dist/pkg/
+          tar -czf "dist/${ARCHIVE}" -C dist/pkg .
+
+      - name: Build Release (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          zig build -Doptimize=ReleaseFast
+          $tag = "${{ github.ref_name }}"
+          $archive = "proxy-transport-$tag-${{ matrix.target_name }}.${{ matrix.archive_ext }}"
+          New-Item -ItemType Directory -Force -Path dist/pkg/bin, dist/pkg/lib, dist/pkg/include | Out-Null
+          Copy-Item zig-out/bin/proxy_transport.dll dist/pkg/bin/
+          Copy-Item zig-out/lib/proxy_transport.lib dist/pkg/lib/
+          Copy-Item include/proxy_transport.h dist/pkg/include/
+          Copy-Item README.md, LICENSE dist/pkg/
+          Compress-Archive -Path dist/pkg/* -DestinationPath "dist/$archive" -Force
+
+      - name: Upload Release Asset
+        uses: actions/upload-artifact@v7
+        with:
+          name: assets
+          path: dist/proxy-transport-*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: assets
+          path: dist/
+
+      - name: Generate Checksums
+        working-directory: dist
+        run: |
+          sha256sum proxy-transport-* > SHA256SUMS.txt
+          ls -la
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          gh release create "$TAG" \
+            dist/* \
+            --title "$TAG" \
+            --generate-notes
