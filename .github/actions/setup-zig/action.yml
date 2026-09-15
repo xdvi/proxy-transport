@@ -1,0 +1,36 @@
+name: 'Setup Zig'
+description: 'Install Zig compiler natively without Node.js runtime dependencies'
+inputs:
+  version:
+    description: 'Version of Zig to install'
+    required: false
+    default: '0.16.0'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install Zig (Linux & macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        ZIG_ARCH="x86_64"
+        if [ "$(uname -m)" = "arm64" ] || [ "$(uname -m)" = "aarch64" ]; then
+          ZIG_ARCH="aarch64"
+        fi
+        ZIG_OS="linux"
+        if [ "$(uname -s)" = "Darwin" ]; then
+          ZIG_OS="macos"
+        fi
+        mkdir -p "$HOME/zig"
+        curl -sSfL "https://ziglang.org/download/${{ inputs.version }}/zig-${ZIG_ARCH}-${ZIG_OS}-${{ inputs.version }}.tar.xz" | tar -xJ --strip-components=1 -C "$HOME/zig"
+        echo "$HOME/zig" >> "$GITHUB_PATH"
+
+    - name: Install Zig (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $dest = "$env:USERPROFILE\zig-install"
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        Invoke-WebRequest -Uri "https://ziglang.org/download/${{ inputs.version }}/zig-x86_64-windows-${{ inputs.version }}.zip" -OutFile "$env:TEMP\zig.zip"
+        Expand-Archive -Path "$env:TEMP\zig.zip" -DestinationPath $dest -Force
+        Add-Content -Path $env:GITHUB_PATH -Value "$dest\zig-x86_64-windows-${{ inputs.version }}"
