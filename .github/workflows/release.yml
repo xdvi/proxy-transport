@@ -69,7 +69,7 @@ jobs:
       - name: Upload Release Asset
         uses: actions/upload-artifact@v7
         with:
-          name: assets
+          name: ${{ matrix.target_name }}
           path: dist/proxy-transport-*
           if-no-files-found: error
 
@@ -84,8 +84,8 @@ jobs:
       - name: Download all built artifacts
         uses: actions/download-artifact@v7
         with:
-          name: assets
           path: dist/
+          merge-multiple: true
 
       - name: Generate Checksums
         working-directory: dist
@@ -93,7 +93,7 @@ jobs:
           sha256sum proxy-transport-* > SHA256SUMS.txt
           ls -la
 
-      - name: Create GitHub Release
+      - name: Create or Update GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -101,4 +101,4 @@ jobs:
           gh release create "$TAG" \
             dist/* \
             --title "$TAG" \
-            --generate-notes
+            --generate-notes 2>/dev/null || gh release upload "$TAG" dist/* --clobber
