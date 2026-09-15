@@ -374,6 +374,17 @@ pub const ProxyPool = struct {
         return 0;
     }
 
+    pub fn getTotalActiveLeases(self: *const ProxyPool) usize {
+        var total: usize = 0;
+        for (self.entries) |entry| {
+            total += entry.active_leases.load(.monotonic);
+        }
+        for (self.draining.items) |entry| {
+            total += entry.active_leases.load(.monotonic);
+        }
+        return total;
+    }
+
     pub fn registerSuccess(self: *ProxyPool, slot_index: usize) void {
         if (slot_index < self.entries.len) {
             self.entries[slot_index].health.registerSuccess();

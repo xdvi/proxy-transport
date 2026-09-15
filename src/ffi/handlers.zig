@@ -446,6 +446,11 @@ pub export fn proxy_pool_get_active_leases(handle: ?*const ProxyPoolHandle, slot
     return h.pool.getActiveLeases(slot_index);
 }
 
+pub export fn proxy_pool_get_total_active_leases(handle: ?*const ProxyPoolHandle) callconv(.c) u32 {
+    const h = validatePoolHandle(handle) orelse return 0;
+    return @intCast(h.pool.getTotalActiveLeases());
+}
+
 
 pub export fn proxy_format_connect_request(
     endpoint: ?*const ProxyEndpointInfo,
