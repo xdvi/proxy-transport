@@ -1,0 +1,13 @@
+.{
+    .name = .proxy_transport,
+    .version = "0.1.0",
+    .fingerprint = 0x9c99d2f1a7284ba2,
+    .minimum_zig_version = "0.16.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "include",
+        "README.md",
+    },
+}
