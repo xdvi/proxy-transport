@@ -409,4 +409,3 @@ pub const ProxyPool = struct {
         };
     }
 };
-

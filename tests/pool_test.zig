@@ -201,5 +201,3 @@ test "pool: hot-reload rolls back on invalid url without mutating pool" {
     try testing.expectEqualStrings("http://proxy1.local:8080", lease.getUrl());
     lease.release();
 }
-
-

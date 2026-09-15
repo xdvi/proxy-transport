@@ -294,7 +294,6 @@ pub export fn proxy_pool_reload_from_text(
     return 0;
 }
 
-
 pub export fn proxy_pool_acquire_lease(handle: ?*const ProxyPoolHandle) callconv(.c) ?*ProxyLeaseHandle {
     const h = validatePoolHandle(handle) orelse return null;
     const maybe_lease = h.pool.acquireLease();
@@ -320,7 +319,6 @@ pub export fn proxy_lease_free(lease: ?*ProxyLeaseHandle) callconv(.c) void {
     h.canary = CANARY_FREED;
     std.heap.c_allocator.destroy(h);
 }
-
 
 pub export fn proxy_lease_get_url(
     lease: ?*const ProxyLeaseHandle,
@@ -450,7 +448,6 @@ pub export fn proxy_pool_get_total_active_leases(handle: ?*const ProxyPoolHandle
     const h = validatePoolHandle(handle) orelse return 0;
     return @intCast(h.pool.getTotalActiveLeases());
 }
-
 
 pub export fn proxy_format_connect_request(
     endpoint: ?*const ProxyEndpointInfo,

@@ -37,7 +37,6 @@ pub const ProxyEndpoint = struct {
             rest = rest[idx + 3 ..];
         }
 
-
         var username: ?[]const u8 = null;
         var password: ?[]const u8 = null;
         var auth_header: ?[]const u8 = null;

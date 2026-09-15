@@ -79,5 +79,3 @@ test "health: memory layout is cache-line friendly (<= 64 bytes)" {
     try testing.expect(@sizeOf(proxy.health.ProxyHealth) <= 64);
     try testing.expectEqual(@as(usize, 8), @alignOf(proxy.health.ProxyHealth));
 }
-
-

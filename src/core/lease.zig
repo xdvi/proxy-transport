@@ -73,4 +73,3 @@ pub const ProxyLease = struct {
         self.entry.health.registerFailure(time.nowMs());
     }
 };
-

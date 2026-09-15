@@ -54,7 +54,6 @@ test "ffi: active lease tracking and decrement on proxy_lease_free" {
     try testing.expectEqual(@as(u32, 0), proxy.ffi.proxy_pool_get_active_leases(pool, 0));
 }
 
-
 test "ffi: from_text parses string pool" {
     const text: [:0]const u8 =
         \\# comment
@@ -216,4 +215,3 @@ test "ffi: pool hot-reload via C-ABI preserves stats on continuing proxies" {
     _ = proxy.ffi.proxy_pool_get_stats(pool, 0, &stats_after);
     try testing.expectEqual(@as(u64, 1), stats_after.successes);
 }
-

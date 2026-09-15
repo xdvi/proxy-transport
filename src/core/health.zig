@@ -132,4 +132,3 @@ pub const ProxyHealth = struct {
         };
     }
 };
-
