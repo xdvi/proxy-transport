@@ -64,16 +64,6 @@ jobs:
         with:
           version: '0.16.0'
 
-      - name: Cache Zig global & local caches
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/zig
-            .zig-cache
-          key: ${{ runner.os }}-zig-${{ matrix.target }}-${{ hashFiles('build.zig', 'build.zig.zon') }}
-          restore-keys: |
-            ${{ runner.os }}-zig-${{ matrix.target }}-
-
       - name: Build Release Packages
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
