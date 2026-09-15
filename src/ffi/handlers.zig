@@ -24,7 +24,7 @@ pub const ProxyLeaseHandle = struct {
 };
 
 threadlocal var last_error_code: i32 = 0;
-threadlocal var last_error_message: [256]u8 = [_]u8{0} ** 256;
+threadlocal var last_error_message: [256]u8 = @splat(0);
 
 pub fn setLastError(code: ProxyErrorCode, msg: []const u8) void {
     last_error_code = code.toI32();
